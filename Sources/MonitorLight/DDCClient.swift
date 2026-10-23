@@ -58,6 +58,25 @@ actor DDCClient {
         return try BrightnessReading(current: current, maximum: maximum)
     }
 
+    func readColor(_ display: ExternalDisplay) throws -> ColorReading {
+        func channel(_ name: String) throws -> RGBGain {
+            let maximumText = try command(["display", display.id, "max", name])
+            let currentText = try command(["display", display.id, "get", name])
+            guard let maximum = Int(maximumText), let current = Int(currentText) else { throw ColorControlError.invalidReply }
+            return try RGBGain(current: current, maximum: maximum)
+        }
+        return try ColorReading(red: channel("red"), green: channel("green"), blue: channel("blue"))
+    }
+
+    func setColor(_ display: ExternalDisplay, target: ColorReading) throws -> ColorReading {
+        try ColorTransaction.apply(target: target, read: {
+            Thread.sleep(forTimeInterval: 0.18)
+            return try readColor(display)
+        }, write: { index, value in
+            _ = try command(["display", display.id, "set", ["red", "green", "blue"][index], String(value)])
+        })
+    }
+
     func set(_ display: ExternalDisplay, percent: Double, reading: BrightnessReading) throws -> BrightnessReading {
         let target = reading.rawValue(forPercent: percent)
         _ = try command(["display", display.id, "set", "luminance", String(target)])

@@ -40,6 +40,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let outputPath = CommandLine.arguments[index + 1]
             Task { await self.runSelfTest(outputPath: outputPath) }
         }
+        if let index = CommandLine.arguments.firstIndex(of: "--color-self-test"), CommandLine.arguments.count > index + 1 {
+            let outputPath = CommandLine.arguments[index + 1]
+            Task { await self.runColorSelfTest(outputPath: outputPath) }
+        }
     }
 
     @objc private func togglePanel() {
@@ -98,6 +102,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         result["hotkeysRegistered"] = hotkeys.count
         result["error"] = model.error ?? ""
         result["passed"] = (result["preset15Readback"] as? Int == 15) && (result["increaseReadback"] as? Int == 20) && (result["decreaseReadback"] as? Int == 15) && model.reading?.percent == originalPercent && hotkeys.count == 2
+        if let data = try? JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]), let json = String(data: data, encoding: .utf8) { print(json) }
+        NSApp.terminate(nil)
+    }
+
+    private func runColorSelfTest(outputPath: String) async {
+        await waitForHardware()
+        var result: [String: Any] = ["passed": false]
+        let client = DDCClient()
+        if let display = model.selectedDisplay {
+            do {
+                let original = try await client.readColor(display)
+                result["originalRGB"] = original.values
+                do {
+                    let warm = try await client.setColor(display, target: original.adjusted(warmth: 0.1))
+                    result["warmRGB"] = warm.values
+                    let cool = try await client.setColor(display, target: original.adjusted(warmth: -0.1))
+                    result["coolRGB"] = cool.values
+                } catch { result["error"] = error.localizedDescription }
+                // Always attempt original restoration, including failed test writes.
+                let restored = try await client.setColor(display, target: original)
+                result["restoredRGB"] = restored.values
+                result["passed"] = result["error"] == nil && restored.matches(original)
+            } catch { result["error"] = error.localizedDescription }
+        }
+        if !popover.isShown { togglePanel() }
+        await waitForHardware()
+        if let view = popover.contentViewController?.view {
+            view.layoutSubtreeIfNeeded()
+            if let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                try? bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: outputPath))
+            }
+        }
         if let data = try? JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]), let json = String(data: data, encoding: .utf8) { print(json) }
         NSApp.terminate(nil)
     }

@@ -12,7 +12,7 @@ struct PanelView: View {
                     .font(.system(size: 19))
                     .foregroundStyle(Color(red: 0.8, green: 0.57, blue: 0.22))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("屏幕亮度").font(.system(size: 17, weight: .semibold))
+                    Text("亮度与冷暖").font(.system(size: 17, weight: .semibold))
                     Text("MONITORLIGHT").font(.system(size: 9, weight: .medium, design: .monospaced)).tracking(1.8).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -25,6 +25,7 @@ struct PanelView: View {
                     ForEach(model.displays) { display in Text(display.name).tag(display.id) }
                 }
                 .pickerStyle(.menu)
+                .disabled(model.isBusy)
             } else {
                 HStack(spacing: 7) {
                     Image(systemName: "display")
@@ -54,6 +55,31 @@ struct PanelView: View {
                 preset("低亮", symbol: "moon", value: 15)
                 preset("日常", symbol: "sun.haze", value: 45)
                 preset("明亮", symbol: "sun.max", value: 80)
+            }
+
+            Divider()
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("冷暖调节").font(.system(size: 12, weight: .medium))
+                    Spacer()
+                    Button("恢复原色") { model.requestWarmth(0) }
+                        .buttonStyle(.plain).foregroundStyle(teal).font(.system(size: 11))
+                        .disabled(model.colorReading == nil || model.isBusy)
+                }
+                HStack {
+                    Image(systemName: "snowflake").foregroundStyle(.blue)
+                    Slider(value: Binding(get: { model.warmth }, set: model.requestWarmth), in: -1...1)
+                        .tint(teal).disabled(model.colorReading == nil || model.isBusy)
+                        .accessibilityLabel("冷暖调节，左侧偏冷，右侧偏暖")
+                    Image(systemName: "sun.haze.fill").foregroundStyle(.orange)
+                }
+                HStack {
+                    colorPreset("偏冷", value: -1)
+                    colorPreset("标准", value: 0)
+                    colorPreset("偏暖", value: 1)
+                }
+                Text(model.colorMessage).font(.system(size: 10)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -93,5 +119,12 @@ struct PanelView: View {
         }
         .buttonStyle(.plain)
         .disabled(model.reading == nil || model.isBusy)
+    }
+
+    private func colorPreset(_ title: String, value: Double) -> some View {
+        Button { model.requestWarmth(value) } label: {
+            Text(title).font(.system(size: 11)).frame(maxWidth: .infinity).padding(.vertical, 7)
+                .background(RoundedRectangle(cornerRadius: 7).fill(Color.black.opacity(0.035)))
+        }.buttonStyle(.plain).disabled(model.colorReading == nil || model.isBusy)
     }
 }
