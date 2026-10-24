@@ -37,8 +37,17 @@ public struct ColorReading: Codable, Equatable, Sendable {
     public var maxima: [Int] { [red.maximum, green.maximum, blue.maximum] }
 
     /// Relative tint, not a calibrated Kelvin temperature. Positive is warmer.
-    public func adjusted(warmth: Double) -> ColorReading {
+    public func adjusted(warmth: Double, profile: ColorResponseProfile? = nil) -> ColorReading {
         let amount = warmth.isFinite ? min(1, max(-1, warmth)) : 0
+        if profile == .blueOnlyNormal {
+            // Red compensation failed physical validation. Leave red and green at baseline.
+            // Blue-only correction remains a limited tint adjustment, not calibrated CCT.
+            func shifted(_ gain: RGBGain) -> RGBGain {
+                let value = min(Double(gain.maximum), max(0, Double(gain.current) - Double(gain.maximum) * 0.10 * amount))
+                return try! RGBGain(current: Int(value.rounded()), maximum: gain.maximum)
+            }
+            return ColorReading(red: red, green: green, blue: shifted(blue))
+        }
         return ColorReading(red: red.scaled(amount < 0 ? 1 + 0.35 * amount : 1),
                             green: green.scaled(1 - 0.1 * abs(amount)),
                             blue: blue.scaled(amount > 0 ? 1 - 0.35 * amount : 1))

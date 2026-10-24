@@ -104,6 +104,7 @@ static void printDisplayInfos(DisplayInfos *display, int nbDisplays, bool detail
 // Function to handle the reading operation (get, max, chg)
 static DDCValue readingOperation(DDCTransport *transport, DDCPacket *packet) {
     DDCValue dummyAttr = {-1, -1};
+    UInt8 requestedCode = packet->data[2];
 
     prepareDDCRead(packet->data);
 
@@ -122,6 +123,11 @@ static DDCValue readingOperation(DDCTransport *transport, DDCPacket *packet) {
         return dummyAttr;
     }
 
+    if (getenv("MONITORLIGHT_DDC_TRACE")) {
+        fprintf(stderr, "DDC request=%02x reply=", requestedCode);
+        for (int i = 0; i < 12; i++) { fprintf(stderr, "%02x ", readPacket.data[i]); }
+        fprintf(stderr, "\n");
+    }
     return convertI2CtoDDC((char *)readPacket.data);
 }
 

@@ -1,5 +1,18 @@
 import SwiftUI
 
+struct PanelViewport: View {
+    @ObservedObject var model: MonitorModel
+    let height: CGFloat
+
+    var body: some View {
+        ScrollView(.vertical) {
+            PanelView(model: model).fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(width: 340, height: height, alignment: .top)
+        .background(Color(red: 0.97, green: 0.97, blue: 0.94))
+    }
+}
+
 struct PanelView: View {
     @ObservedObject var model: MonitorModel
     private let ink = Color(red: 0.12, green: 0.19, blue: 0.19)
@@ -60,16 +73,24 @@ struct PanelView: View {
             Divider()
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("冷暖调节").font(.system(size: 12, weight: .medium))
+                    Text("实验性 RGB 冷暖").font(.system(size: 12, weight: .medium))
                     Spacer()
                     Button("恢复原色") { model.requestWarmth(0) }
                         .buttonStyle(.plain).foregroundStyle(teal).font(.system(size: 11))
                         .disabled(model.colorReading == nil || model.isBusy)
                 }
+                if model.colorResponseProfile != nil {
+                    Text("蓝通道范围 ±10% · 红绿保持原值")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                } else {
+                    Toggle("启用蓝通道冷暖（未校准）", isOn: $model.allowUnverifiedColor)
+                        .toggleStyle(.checkbox).font(.system(size: 10))
+                        .disabled(model.colorReading == nil || model.isBusy)
+                }
                 HStack {
                     Image(systemName: "snowflake").foregroundStyle(.blue)
                     Slider(value: Binding(get: { model.warmth }, set: model.requestWarmth), in: -1...1)
-                        .tint(teal).disabled(model.colorReading == nil || model.isBusy)
+                        .tint(teal).disabled(model.colorReading == nil || model.isBusy || !model.canAdjustColor)
                         .accessibilityLabel("冷暖调节，左侧偏冷，右侧偏暖")
                     Image(systemName: "sun.haze.fill").foregroundStyle(.orange)
                 }
@@ -125,6 +146,6 @@ struct PanelView: View {
         Button { model.requestWarmth(value) } label: {
             Text(title).font(.system(size: 11)).frame(maxWidth: .infinity).padding(.vertical, 7)
                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.black.opacity(0.035)))
-        }.buttonStyle(.plain).disabled(model.colorReading == nil || model.isBusy)
+        }.buttonStyle(.plain).disabled(model.colorReading == nil || model.isBusy || (value != 0 && !model.canAdjustColor))
     }
 }

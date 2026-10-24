@@ -3,6 +3,26 @@ import BrightnessCore
 @testable import MonitorLight
 
 final class MonitorModelTests: XCTestCase {
+    @MainActor func testAutomaticDisplayChangeClearsExperimentalPermissionAndPendingState() throws {
+        let model = MonitorModel()
+        model.selectedID = "old-screen"
+        model.allowUnverifiedColor = true
+        model.warmth = 1
+        model.reading = try BrightnessReading(current: 45, maximum: 100)
+        model.resetColorSelection("new-screen")
+        XCTAssertEqual(model.selectedID, "new-screen")
+        XCTAssertFalse(model.allowUnverifiedColor)
+        XCTAssertEqual(model.warmth, 0)
+        XCTAssertNil(model.reading)
+        XCTAssertNil(model.colorReading)
+        XCTAssertNil(model.colorResponseProfile)
+    }
+    @MainActor func testUnverifiedColorIsBlockedByDefault() {
+        let model = MonitorModel()
+        model.requestWarmth(-1)
+        XCTAssertEqual(model.warmth, 0)
+        XCTAssertTrue(model.colorMessage.contains("未验证"))
+    }
     @MainActor func testBrightnessRequestResetsUncommittedWarmth() throws {
         let model = MonitorModel()
         model.displays = [ExternalDisplay(id: "fake", name: "Test", systemID: 9)]

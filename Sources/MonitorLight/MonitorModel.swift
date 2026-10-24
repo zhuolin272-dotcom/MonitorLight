@@ -13,6 +13,8 @@ final class MonitorModel: ObservableObject {
     @Published var reading: BrightnessReading?
     @Published var colorReading: ColorReading?
     @Published var warmth: Double = 0
+    @Published var allowUnverifiedColor = false
+    @Published private(set) var colorResponseProfile: ColorResponseProfile?
     @Published var colorMessage = "正在检测硬件冷暖调节…"
     private var originalColor: ColorReading?
     private var confirmedWarmth: Double = 0
@@ -22,6 +24,7 @@ final class MonitorModel: ObservableObject {
     private var needsRefresh = false
 
     var selectedDisplay: ExternalDisplay? { displays.first { $0.id == selectedID } }
+    var canAdjustColor: Bool { colorResponseProfile != nil || allowUnverifiedColor }
 
     func refresh() {
         guard !isBusy else { needsRefresh = true; return }
@@ -38,12 +41,13 @@ final class MonitorModel: ObservableObject {
                 displays = found
                 if !found.contains(where: { $0.id == selectedID }) {
                     let remembered = UserDefaults.standard.string(forKey: "selectedDisplay")
-                    selectedID = found.first(where: { $0.id == remembered })?.id ?? found.first?.id ?? ""
+                    resetColorSelection(found.first(where: { $0.id == remembered })?.id ?? found.first?.id ?? "")
                 }
                 guard let display = selectedDisplay else {
                     reading = nil
                     colorReading = nil
                     originalColor = nil
+                    colorResponseProfile = nil
                     colorMessage = "未检测到外接显示器"
                     status = "未检测到支持的外接显示器"
                     return
@@ -58,6 +62,7 @@ final class MonitorModel: ObservableObject {
                     status = "无法读取硬件亮度"
                 }
                 do {
+                    colorResponseProfile = ColorResponseProfile.load(displayID: display.id)
                     let color = try await client.readColor(display)
                     colorReading = color
                     let data = UserDefaults.standard.data(forKey: "originalColor.\(display.id)")
@@ -72,19 +77,21 @@ final class MonitorModel: ObservableObject {
                         colorMessage = "RGB 范围已变化，请恢复显示器原图像模式后重试"
                     } else {
                         originalColor = saved ?? color
-                        if !originalColor!.adjusted(warmth: confirmedWarmth).matches(color) { confirmedWarmth = 0 }
+                        if !originalColor!.adjusted(warmth: confirmedWarmth, profile: colorResponseProfile ?? .blueOnlyNormal).matches(color) { confirmedWarmth = 0 }
                         warmth = confirmedWarmth
-                        colorMessage = "硬件 RGB · 相对冷暖，非校准色温"
+                        colorMessage = colorResponseProfile == nil ? "RGB 数值可读，实际颜色方向和色温未验证" : "本机方向修正已载入 · 小幅调节，待肉眼复核"
                     }
                 } catch {
                     colorReading = nil
                     originalColor = nil
+                    colorResponseProfile = nil
                     colorMessage = "当前显示器或 HDR 模式不支持硬件冷暖调节"
                 }
             } catch {
                 reading = nil
                 colorReading = nil
                 originalColor = nil
+                colorResponseProfile = nil
                 displays = []
                 selectedID = ""
                 colorMessage = "显示器检测失败，硬件冷暖调节不可用"
@@ -96,15 +103,21 @@ final class MonitorModel: ObservableObject {
 
     func selectDisplay(_ id: String) {
         guard !isBusy else { return }
+        resetColorSelection(id)
+        UserDefaults.standard.set(id, forKey: "selectedDisplay")
+        refresh()
+    }
+
+    func resetColorSelection(_ id: String) {
         pendingWrite?.cancel()
         selectedID = id
-        UserDefaults.standard.set(id, forKey: "selectedDisplay")
         reading = nil
         colorReading = nil
         originalColor = nil
+        colorResponseProfile = nil
         warmth = 0
         confirmedWarmth = 0
-        refresh()
+        allowUnverifiedColor = false
     }
 
     func requestBrightness(_ value: Double) {
@@ -136,18 +149,24 @@ final class MonitorModel: ObservableObject {
     func step(_ delta: Double) { requestBrightness(brightness + delta) }
 
     func requestWarmth(_ value: Double) {
+        guard value == 0 || canAdjustColor else {
+            colorMessage = "实际颜色方向未验证，请先校验；恢复原色仍可使用"
+            return
+        }
         guard let display = selectedDisplay, let original = originalColor,
               colorReading != nil, !isBusy else { return }
         if let reading { brightness = Double(reading.percent) }
         let previous = confirmedWarmth
         warmth = value.isFinite ? min(1, max(-1, value)) : 0
         let desired = warmth
+        let profile = colorResponseProfile
         pendingWrite?.cancel()
         pendingWrite = Task {
             do {
                 try await Task.sleep(nanoseconds: 220_000_000)
                 try Task.checkCancellation()
                 guard selectedID == display.id else { return }
+                guard desired == 0 || canAdjustColor else { warmth = confirmedWarmth; return }
                 isBusy = true
                 defer { finishOperation() }
                 // Persist before the first hardware write. Never overwrite the original.
@@ -156,9 +175,9 @@ final class MonitorModel: ObservableObject {
                     let data = try JSONEncoder().encode(original)
                     UserDefaults.standard.set(data, forKey: key)
                 }
-                colorReading = try await client.setColor(display, target: original.adjusted(warmth: desired))
+                colorReading = try await client.setColor(display, target: original.adjusted(warmth: desired, profile: profile ?? .blueOnlyNormal))
                 confirmedWarmth = desired
-                colorMessage = desired == 0 ? "已恢复原色 · 已读回确认" : "冷暖已调整 · 已读回确认"
+                colorMessage = desired == 0 ? "原色 RGB 已恢复并读回；不代表色温已校准" : (profile == nil ? "RGB 数值已读回，实际冷暖方向尚未校准" : "方向修正 RGB 已读回 · 请核对肉眼冷暖，不代表精确色温")
             } catch is CancellationError {
                 return
             } catch {

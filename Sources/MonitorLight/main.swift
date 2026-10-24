@@ -1,6 +1,7 @@
 import AppKit
 import Carbon
 import SwiftUI
+import BrightnessCore
 
 private let hotkeySignature: OSType = 0x4D4C4954
 
@@ -24,7 +25,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.target = self
         item.button?.action = #selector(togglePanel)
         popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: PanelView(model: model))
         registerHotkeys()
         CGDisplayRegisterReconfigurationCallback({ _, _, context in
             guard let context else { return }
@@ -35,6 +35,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.refresh()
         if CommandLine.arguments.contains("--show-panel") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { self.togglePanel() }
+        }
+        if let index = CommandLine.arguments.firstIndex(of: "--panel-preview"), CommandLine.arguments.count > index + 1 {
+            let path = CommandLine.arguments[index + 1]
+            Task {
+                await self.waitForHardware()
+                if !self.popover.isShown { self.togglePanel() }
+                await self.waitForHardware()
+                if let view = self.popover.contentViewController?.view {
+                    view.layoutSubtreeIfNeeded()
+                    if let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                        view.cacheDisplay(in: view.bounds, to: bitmap)
+                        try? bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                    }
+                }
+                print("PANEL_PREVIEW_READ_ONLY")
+                NSApp.terminate(nil)
+            }
         }
         if let index = CommandLine.arguments.firstIndex(of: "--self-test"), CommandLine.arguments.count > index + 1 {
             let outputPath = CommandLine.arguments[index + 1]
@@ -51,9 +68,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if popover.isShown { popover.performClose(nil) }
         else {
             model.refresh()
+            guard let anchorWindow = button.window else { return }
+            let anchor = anchorWindow.convertToScreen(button.convert(button.bounds, to: nil))
+            let screen = NSScreen.screens.first { $0.frame.contains(NSPoint(x: anchor.midX, y: anchor.midY)) }
+                ?? anchorWindow.screen ?? NSScreen.main
+            guard let screen else { return }
+            let measured = NSHostingView(rootView: PanelView(model: model).fixedSize(horizontal: false, vertical: true))
+            let height = PanelGeometry.viewportHeight(content: measured.fittingSize.height,
+                                                     visible: screen.visibleFrame.height - 8)
+            let size = NSSize(width: 340, height: height)
+            popover.contentViewController = NSHostingController(rootView: PanelViewport(model: model, height: height))
+            popover.contentSize = size
             NSApp.activate(ignoringOtherApps: true)
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let window = self.popover.contentViewController?.view.window else { return }
+                window.setFrame(PanelGeometry.constrained(window.frame, to: screen.visibleFrame), display: true)
+                window.makeKey()
+                if CommandLine.arguments.contains("--panel-diagnostics") {
+                    print("PANEL_DIAGNOSTICS anchor=\(NSStringFromRect(anchor)) screen=\(NSStringFromRect(screen.visibleFrame)) window=\(NSStringFromRect(window.frame)) viewport=\(size) contained=\(screen.visibleFrame.contains(window.frame))")
+                    fflush(stdout)
+                }
+            }
         }
     }
 
@@ -115,9 +151,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let original = try await client.readColor(display)
                 result["originalRGB"] = original.values
                 do {
-                    let warm = try await client.setColor(display, target: original.adjusted(warmth: 0.1))
+                    let warm = try await client.setColor(display, target: original.adjusted(warmth: 0.1, profile: .blueOnlyNormal))
                     result["warmRGB"] = warm.values
-                    let cool = try await client.setColor(display, target: original.adjusted(warmth: -0.1))
+                    let cool = try await client.setColor(display, target: original.adjusted(warmth: -0.1, profile: .blueOnlyNormal))
                     result["coolRGB"] = cool.values
                 } catch { result["error"] = error.localizedDescription }
                 // Always attempt original restoration, including failed test writes.

@@ -10,6 +10,8 @@
 
 Original upstream source files and the MIT notice are retained. The build copies that notice into `MonitorLight.app/Contents/Resources/m1ddc-LICENSE.txt`.
 
+Local diagnostic modification: `sources/m1ddc.m` can emit raw read replies to stderr when `MONITORLIGHT_DDC_TRACE` is set. This is read-only tracing and does not change RGB mappings or normal command output.
+
 ## MonitorLight source
 
 No license has yet been selected for MonitorLight-specific source files. Rights to those files are reserved by their respective rights holder. This does not alter the upstream MIT license for m1ddc.
