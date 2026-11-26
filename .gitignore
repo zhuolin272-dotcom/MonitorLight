@@ -4,3 +4,5 @@ dist/
 .DS_Store
 Vendor/m1ddc/.objects/
 Vendor/m1ddc/m1ddc
+Windows/**/bin/
+Windows/**/obj/

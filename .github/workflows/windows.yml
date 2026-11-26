@@ -1,0 +1,28 @@
+name: Windows tests
+
+on:
+  push:
+    paths: ['Windows/**', '.github/workflows/windows.yml']
+  pull_request:
+    paths: ['Windows/**', '.github/workflows/windows.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test and package Windows app
+        shell: pwsh
+        run: ./Windows/build.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MonitorLight-Windows-x64
+          path: dist/MonitorLight-Windows-x64.zip
+          if-no-files-found: error

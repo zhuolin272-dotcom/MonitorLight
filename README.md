@@ -1,6 +1,13 @@
 # MonitorLight · 外接显示器亮度与冷暖控制
 
-为 Apple Silicon Mac 制作的轻量菜单栏应用，通过 **DDC/CI 调节外接显示器的真实硬件背光**。点击菜单栏太阳图标即可调亮度，省去伸手按显示器实体按键。
+MonitorLight 通过 **DDC/CI 调节外接显示器的硬件背光与冷暖**。在 Windows 点击任务栏通知区域的太阳图标，在 Apple Silicon Mac 点击菜单栏的太阳图标。
+
+| 平台 | 下载 | 使用说明 |
+| --- | --- | --- |
+| Windows 11 x64 | [MonitorLight-Windows-x64.zip](https://github.com/zhuolin272-dotcom/MonitorLight/releases/download/windows-v1.0.0/MonitorLight-Windows-x64.zip) | [Windows 版](Windows/README.md) |
+| Apple Silicon Mac | [MonitorLight-macOS-arm64.zip](downloads/MonitorLight-macOS-arm64.zip) | [macOS 下载与安装](#下载与安装) |
+
+## macOS 版
 
 ![MonitorLight 菜单栏面板](docs/images/panel.png)
 
